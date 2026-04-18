@@ -30,6 +30,13 @@ class CandyHudOverlay extends StatefulWidget {
 }
 
 class _CandyHudOverlayState extends State<CandyHudOverlay> {
+  /// Dark text on the white settings sheet (global theme is dark → defaults were illegible).
+  static final TextStyle _settingsPanelLabelStyle = GoogleFonts.fredoka(
+    fontSize: 17,
+    fontWeight: FontWeight.w600,
+    color: const Color(0xFF4E342E),
+  );
+
   ui.Image? _localSheet;
   var _settingsOpen = false;
 
@@ -157,6 +164,9 @@ class _CandyHudOverlayState extends State<CandyHudOverlay> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF0D47A1),
+                            ),
                             onPressed: () {
                               widget.onRestart();
                               _setMenuOpen(false);
@@ -165,7 +175,7 @@ class _CandyHudOverlayState extends State<CandyHudOverlay> {
                               'assets/images/gui_restart.png',
                               height: 36,
                             ),
-                            label: const Text('Reload'),
+                            label: Text('Reload', style: _settingsPanelLabelStyle),
                           ),
                         ],
                       ),
@@ -211,7 +221,7 @@ class _CandyHudOverlayState extends State<CandyHudOverlay> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Sound'),
+            Text('Sound', style: _settingsPanelLabelStyle),
             IconButton(
               icon: Image.asset(
                 CandySoundboard.enabled
@@ -233,7 +243,7 @@ class _CandyHudOverlayState extends State<CandyHudOverlay> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Music'),
+            Text('Music', style: _settingsPanelLabelStyle),
             IconButton(
               icon: Image.asset(
                 CandyJukebox.isEnabled

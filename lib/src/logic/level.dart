@@ -93,3 +93,32 @@ Level createDefaultLevel() {
     ],
   );
 }
+
+/// Fixed 5×5 board for QA / tests: no matches at load; one known good swap.
+///
+/// Swap `(1,0)` B with `(1,1)` A → top row `A A A` (three in a row).
+String mockLevelData() {
+  return '''
+    [A,B,A,D,E]
+    [C,A,D,B,C]
+    [D,E,C,A,B]
+    [B,C,D,E,A]
+    [E,D,B,C,D]
+    ''';
+}
+
+String mockReserveData() {
+  return '''
+    [D,C,B,A,E]
+    [E,D,C,B,A]
+    ''';
+}
+
+Level createMockLevel() {
+  return Level(
+    levelData: mockLevelData(),
+    reserveData: mockReserveData(),
+    maxMoves: 99,
+    tileObjectives: const [],
+  );
+}

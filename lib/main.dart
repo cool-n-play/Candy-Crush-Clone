@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flame/game.dart' show GameWidget;
@@ -5,7 +6,10 @@ import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart';
 
 import 'package:candy_crush_clone/src/game/candy_flame_game.dart';
+import 'package:candy_crush_clone/src/logic/level.dart';
+import 'package:candy_crush_clone/src/logic/level_end_state.dart';
 import 'package:candy_crush_clone/src/widgets/candy_hud_overlay.dart';
+import 'package:candy_crush_clone/src/widgets/level_end_overlay.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,17 +43,48 @@ class CandyAppBody extends StatefulWidget {
 }
 
 class _CandyAppBodyState extends State<CandyAppBody> {
+  static const _idleHintAfter = Duration(seconds: 3);
+
   late final CandyFlameGame g;
   ui.Offset? kDown;
   var _settingsMenuOpen = false;
   var _syncScheduled = false;
+  DateTime _lastInteraction = DateTime.now();
+  var _showIdleHint = false;
+  Timer? _idlePoll;
 
   @override
   void initState() {
     g = CandyFlameGame(
       onStateChanged: _sync,
+      level: createDefaultLevel(),
     );
     super.initState();
+    _idlePoll = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted ||
+          _settingsMenuOpen ||
+          g.isBusy ||
+          g.levelEndState != LevelEndState.none) {
+        return;
+      }
+      final idle = DateTime.now().difference(_lastInteraction) >= _idleHintAfter;
+      if (idle != _showIdleHint) {
+        setState(() => _showIdleHint = idle);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _idlePoll?.cancel();
+    super.dispose();
+  }
+
+  void _noteInteraction() {
+    _lastInteraction = DateTime.now();
+    if (_showIdleHint) {
+      setState(() => _showIdleHint = false);
+    }
   }
 
   /// Flame can call this from resize/update during [GameWidget]'s build — never
@@ -112,12 +147,20 @@ class _CandyAppBodyState extends State<CandyAppBody> {
                   child: Listener(
                     behavior: HitTestBehavior.translucent,
                     onPointerDown: (e) {
+                      if (g.levelEndState != LevelEndState.none) {
+                        return;
+                      }
+                      _noteInteraction();
                       if (g.isBusy) {
                         return;
                       }
                       kDown = e.localPosition;
                     },
                     onPointerUp: (e) {
+                      if (g.levelEndState != LevelEndState.none) {
+                        return;
+                      }
+                      _noteInteraction();
                       if (g.isBusy) {
                         return;
                       }
@@ -136,12 +179,50 @@ class _CandyAppBodyState extends State<CandyAppBody> {
                   ),
                 ),
               ),
+              if (_showIdleHint)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: MediaQuery.paddingOf(ctx).bottom + 16,
+                  child: IgnorePointer(
+                    child: Material(
+                      color: Colors.black.withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        child: Text(
+                          'Подвиньте соседние фишки, чтобы собрать три в ряд.',
+                          key: const Key('idle_move_hint'),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(ctx).textTheme.bodyLarge?.copyWith(
+                                color: const Color(0xFFE3F2FD),
+                                fontWeight: FontWeight.w500,
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               Positioned.fill(
                 child: CandyHudOverlay(
                   check: g.progress,
                   onRestart: g.isBusy ? () {} : g.restartLevel,
                   onMenuOpenChanged: _onMenuOpenChanged,
                 ),
+              ),
+              LevelEndOverlay(
+                state: g.levelEndState,
+                onRestart: () {
+                  g.restartLevel();
+                  _sync();
+                },
+                onNext: () {
+                  g.shuffleBoard();
+                  _sync();
+                },
               ),
             ],
           );

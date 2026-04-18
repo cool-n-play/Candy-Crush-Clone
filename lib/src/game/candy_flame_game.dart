@@ -11,6 +11,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import '../logic/game_mechanics.dart';
 import '../logic/level.dart';
 import '../logic/level_check.dart';
+import '../logic/level_end_state.dart';
+import '../logic/match_scoring.dart';
 import '../models/game_field.dart';
 import '../models/grid_position.dart';
 import '../models/tile.dart';
@@ -21,19 +23,25 @@ import 'donut_atlas.dart';
 import 'palette.dart';
 
 class CandyFlameGame extends FlameGame {
-  CandyFlameGame({this.onStateChanged});
+  CandyFlameGame({this.onStateChanged, Level? level}) {
+    _level = level ?? createDefaultLevel();
+    _mech = GameMechanics(_level.field);
+    progress = LevelCheck(_level);
+  }
+
   void Function()? onStateChanged;
 
-  static const kScorePerTile = 20;
+  /// Kept for callers; value lives in [MatchScoring.kScorePerTile].
+  static const int kScorePerTile = MatchScoring.kScorePerTile;
   static const kTouchSlop = 6.0;
   static const _swapSec = 0.38;
   static const _illegalSec = 0.62;
   static const _scorePopSec = 1.1;
   static const _multFadeSec = 1.6;
 
-  late final Level _level = createDefaultLevel();
-  late GameMechanics _mech = GameMechanics(_level.field);
-  late final LevelCheck progress = LevelCheck(_level);
+  late final Level _level;
+  late GameMechanics _mech;
+  late final LevelCheck progress;
 
   BoardLayout? _grid;
   var _busy = false;
@@ -60,6 +68,11 @@ class CandyFlameGame extends FlameGame {
   List<_InsertItem>? _inserting;
   Completer<void>? _insertComplete;
 
+  LevelEndState _levelEnd = LevelEndState.none;
+
+  /// Win / lose modal; [LevelEndState.none] while level is in progress.
+  LevelEndState get levelEndState => _levelEnd;
+
   int get rush => _rush;
   int get fieldColumns => _field.columnsSize;
   int get fieldRows => _field.rowSize;
@@ -75,6 +88,7 @@ class CandyFlameGame extends FlameGame {
     if (_busy) {
       return;
     }
+    _levelEnd = LevelEndState.none;
     _level.reset();
     _mech = GameMechanics(_field);
     progress.reset();
@@ -91,6 +105,51 @@ class CandyFlameGame extends FlameGame {
     _insertComplete = null;
     _syncGridLayout();
     onStateChanged?.call();
+  }
+
+  /// Same idea as donor [ShuffleGameEvent]: new random board, counters and score reset.
+  void shuffleBoard() {
+    if (_busy) {
+      return;
+    }
+    _levelEnd = LevelEndState.none;
+    progress.reset();
+    final probe = GameMechanics(_field);
+    for (final p in _field.listAllPositions()) {
+      var guard = 0;
+      do {
+        _field.setPosition(p, Tile.randomTile());
+        guard++;
+      } while (probe.isInRowWithThree(p) && guard < 100);
+    }
+    _mech = GameMechanics(_field);
+    _selected = null;
+    _rush = 1;
+    _swapRunning = false;
+    _animA = null;
+    _scorePops.clear();
+    _multShow = null;
+    _multFadeT = 0;
+    _falling = null;
+    _fallComplete = null;
+    _inserting = null;
+    _insertComplete = null;
+    _syncGridLayout();
+    onStateChanged?.call();
+  }
+
+  void _evaluateLevelEnd() {
+    if (_levelEnd != LevelEndState.none) {
+      return;
+    }
+    final hasObjectives = _level.tileObjectives.isNotEmpty;
+    if (hasObjectives && progress.goalsSatisfied) {
+      _levelEnd = LevelEndState.won;
+      return;
+    }
+    if (progress.outOfMoves) {
+      _levelEnd = LevelEndState.lost;
+    }
   }
 
   Future<ui.Image> _decodeAssetImage(String assetPath) async {
@@ -333,7 +392,10 @@ class CandyFlameGame extends FlameGame {
   }
 
   void _bumpScore(int n, int rush, {required GridPosition anchor}) {
-    final delta = n * kScorePerTile * rush;
+    final delta = MatchScoring.scoreDeltaForClear(
+      tilesRemoved: n,
+      rush: rush,
+    );
     progress.onScoreDelta(delta);
     _addScorePopup(delta, anchor);
     _triggerMultiplier(rush);
@@ -404,6 +466,15 @@ class CandyFlameGame extends FlameGame {
     if (_busy) {
       return;
     }
+    if (_levelEnd != LevelEndState.none) {
+      return;
+    }
+    if (_level.tileObjectives.isNotEmpty && progress.goalsSatisfied) {
+      return;
+    }
+    if (progress.outOfMoves) {
+      return;
+    }
     if (!_mech.isSwapAllowed(a, b)) {
       _busy = true;
       _beginSwapAnim(
@@ -460,6 +531,7 @@ class CandyFlameGame extends FlameGame {
     await _dropAndFill();
     await _resolveCascades();
     _busy = false;
+    _evaluateLevelEnd();
     onStateChanged?.call();
   }
 
